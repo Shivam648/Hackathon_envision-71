@@ -14,12 +14,6 @@ export default function TopNav() {
         <nav className="hidden md:flex items-center gap-6">
           <Link
             to="/agents"
-            className="text-on-surface-variant font-medium hover:text-primary transition-colors duration-200 font-body-md text-body-md cursor-pointer"
-          >
-            Home
-          </Link>
-          <Link
-            to="/agents"
             className="text-primary font-bold border-b-2 border-primary font-body-md text-body-md cursor-pointer"
           >
             My Agents

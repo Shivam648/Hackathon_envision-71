@@ -52,7 +52,7 @@ def run_multi_agent_workflow(llm):
         backstory='You are an enthusiastic travel guide.',
         verbose=True,
         allow_delegation=False,
-        llm=llm
+        llm=llm  
     )
     
     # Task 1: Research
@@ -101,16 +101,26 @@ def main():
     # Attach the Security Camera
     recorder.patch(litellm, "completion", extract_messages, "MODEL")
     
-    # Run the multi-agent workflow
-    run_multi_agent_workflow(hf_llm)
-    
-    # Compile the execution trace graph
-    events = recorder.finish()
-    graph = IRCompiler().compile(events)
-    
-    # Pass the tracking metadata to the updated store method
-    record_id = store.save(graph, agent_id=agent_id, agent_name=agent_name)
-    print(f"\n💾 [System] Agent execution preserved in history as: {record_id}")
+    # 🌟 FIX 2: Crash-proof try/except/finally block
+    try:
+        # Run the multi-agent workflow
+        run_multi_agent_workflow(hf_llm)
+        
+    except Exception as e:
+        # If any agent crashes (e.g., API key missing, network timeout), this catches it
+        print(f"\n❌ Agent execution crashed midway: {e}")
+        
+    finally:
+        # This ALWAYS runs, ensuring your Black Box never loses its partial data
+        print("\n💾 [System] Preserving execution graph to database...")
+        
+        # Compile the execution trace graph (captures whatever happened up to the crash)
+        events = recorder.finish()
+        graph = IRCompiler().compile(events)
+        
+        # Pass the tracking metadata to the updated store method
+        record_id = store.save(graph, agent_id=agent_id, agent_name=agent_name)
+        print(f"✅ [System] Agent execution successfully preserved in history as: {record_id}")
 
 if __name__ == "__main__":
     main()

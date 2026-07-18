@@ -102,31 +102,35 @@ def delete_run(record_id: str):
         raise HTTPException(status_code=500, detail=str(e))
 
 # ---------------------------------------------------------
-# 🌟 THE REPLAY ENDPOINT (NOW WITH AUTOGEN ROUTING) 🌟
+# 🌟 THE REPLAY ENDPOINT (CLEAN SIGNATURE) 🌟
 # ---------------------------------------------------------
 @app.post("/api/runs/{record_id}/replay", summary="Trigger Engine Replay (Relaxed Mode)")
 def replay_agent_run(record_id: str):
-    """
-    Dynamically loads the graph and forces playback of the sequence
-    regardless of prompt payload differences (Always Relaxed).
-    """
+    
+    # 🌟 HACKATHON TOGGLE: Change to True internally to demo Chaos Engineering!
+    chaos_mode = False  
+
     try:
         loaded_graph = store.load(record_id)
         
-        # 🌟 MATCHING CLI: Bypass ReplayVM and use raw nodes for relaxed sequence playback
         step_counter = {"current": 0}
         nodes_list = list(loaded_graph.nodes.values())
 
         def hydrated_interceptor(*args, **kwargs):
             from litellm import ModelResponse
             
-            # RELAXED MODE: Ignore prompt differences, force sequence
+            # 🔥 CHAOS MONKEY INJECTION (Controlled by internal variable) 🔥
+            if chaos_mode and step_counter["current"] == 1:
+                step_counter["current"] += 1 # Increment so we don't get stuck
+                raise ConnectionError("🔥 CHAOS MONKEY: Simulated LLM Network Timeout! OpenAI API is down!")
+            
+            # NORMAL RELAXED LOGIC: Forces sequence playback
             if step_counter["current"] < len(nodes_list):
                 current_node = nodes_list[step_counter["current"]]
                 step_counter["current"] += 1
                 return ModelResponse(**current_node.output)
             else:
-                raise RuntimeError("Replay Divergence: Agent requested more LLM calls than were recorded in this trace.")
+                raise RuntimeError("Replay Divergence: Agent requested more LLM calls than were recorded.")
 
         original_completion = litellm.completion
         output_buffer = io.StringIO()
@@ -138,7 +142,6 @@ def replay_agent_run(record_id: str):
             if not hf_token:
                 raise RuntimeError("HF_TOKEN missing from environment.")
             
-            # ROUTER: Boot the correct framework based on the agent ID
             with redirect_stdout(output_buffer):
                 if "autogen" in record_id:
                     run_autogen_workflow(hf_token)
@@ -148,7 +151,6 @@ def replay_agent_run(record_id: str):
                 
             logs = output_buffer.getvalue()
             
-            # SAFELY increment the Replay ROI Counter in the DB
             if hasattr(store, "increment_replay_count"):
                 store.increment_replay_count(record_id)
             
@@ -159,9 +161,16 @@ def replay_agent_run(record_id: str):
             }
             
         except Exception as inner_e:
-            raise inner_e
+            # 🌟 CAPTURE THE CRASH FOR THE UI 🌟
+            logs = output_buffer.getvalue()
+            logs += f"\n\n❌ CRITICAL SYSTEM HALT: {str(inner_e)}"
+            
+            return {
+                "status": "error",
+                "message": "Replay halted due to simulated error." if chaos_mode else "Replay halted due to a native execution error.",
+                "logs": logs
+            }
         finally:
-            # VERY IMPORTANT: Restore normal network capabilities for the server
             litellm.completion = original_completion
             
     except ValueError as e:
